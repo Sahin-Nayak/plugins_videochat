@@ -1,3 +1,5 @@
+import { io } from 'socket.io-client';
+
 const socket = io();
 const myvideo = document.querySelector("#vd1");
 const roomid = params.get("room");
