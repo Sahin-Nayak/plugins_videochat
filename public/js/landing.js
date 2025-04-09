@@ -5,108 +5,82 @@ const joinBut = document.querySelector('#joinroom');
 const mic = document.querySelector('#mic');
 const cam = document.querySelector('#webcam');
 
-let micAllowed = 1;
-let camAllowed = 1;
-
+let micAllowed = true;
+let camAllowed = true;
 let mediaConstraints = { video: true, audio: true };
 
+// Initialize camera
 navigator.mediaDevices.getUserMedia(mediaConstraints)
     .then(localstream => {
         videoCont.srcObject = localstream;
     })
+    .catch(err => {
+        console.error("Error accessing media devices:", err);
+    });
 
+// Generate random room ID
 function uuidv4() {
-    return 'xxyxyxxyx'.replace(/[xy]/g, function (c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return 'xxyxyxxyx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c == 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });
 }
 
-const createroomtext = 'Creating Room...';
-
+// Create room button handler
 createButton.addEventListener('click', (e) => {
     e.preventDefault();
     createButton.disabled = true;
-    createButton.innerHTML = 'Creating Room';
-    createButton.classList = 'createroom-clicked';
-
-    setInterval(() => {
-        if (createButton.innerHTML < createroomtext) {
-            createButton.innerHTML = createroomtext.substring(0, createButton.innerHTML.length + 1);
-        }
-        else {
-            createButton.innerHTML = createroomtext.substring(0, createButton.innerHTML.length - 3);
-        }
-    }, 500);
-
-    //const name = nameField.value;
-    location.href = `/room.html?room=${uuidv4()}`;
+    createButton.textContent = 'Creating Room...';
+    location.href = `room.html?room=${uuidv4()}`;
 });
 
+// Join room button handler
 joinBut.addEventListener('click', (e) => {
     e.preventDefault();
-    if (codeCont.value.trim() == "") {
+    if (codeCont.value.trim() === "") {
         codeCont.classList.add('roomcode-error');
         return;
     }
-    const code = codeCont.value;
-    location.href = `/room.html?room=${code}`;
-})
+    const code = codeCont.value.trim();
+    location.href = `room.html?room=${code}`;
+});
 
-codeCont.addEventListener('change', (e) => {
-    e.preventDefault();
+// Room code input handler
+codeCont.addEventListener('input', (e) => {
     if (codeCont.value.trim() !== "") {
         codeCont.classList.remove('roomcode-error');
-        return;
     }
-})
+});
 
+// Toggle camera
 cam.addEventListener('click', () => {
-    if (camAllowed) {
-        mediaConstraints = { video: false, audio: micAllowed ? true : false };
-        navigator.mediaDevices.getUserMedia(mediaConstraints)
-            .then(localstream => {
-                videoCont.srcObject = localstream;
-            })
+    camAllowed = !camAllowed;
+    mediaConstraints.video = camAllowed;
+    
+    navigator.mediaDevices.getUserMedia(mediaConstraints)
+        .then(localstream => {
+            videoCont.srcObject = localstream;
+            cam.classList.toggle("nodevice", !camAllowed);
+            cam.innerHTML = camAllowed ? `<i class="fas fa-video"></i>` : `<i class="fas fa-video-slash"></i>`;
+        })
+        .catch(err => {
+            console.error("Error toggling video:", err);
+        });
+});
 
-        cam.classList = "nodevice";
-        cam.innerHTML = `<i class="fas fa-video-slash"></i>`;
-        camAllowed = 0;
-    }
-    else {
-        mediaConstraints = { video: true, audio: micAllowed ? true : false };
-        navigator.mediaDevices.getUserMedia(mediaConstraints)
-            .then(localstream => {
-                videoCont.srcObject = localstream;
-            })
-
-        cam.classList = "device";
-        cam.innerHTML = `<i class="fas fa-video"></i>`;
-        camAllowed = 1;
-    }
-})
-
+// Toggle microphone
 mic.addEventListener('click', () => {
-    if (micAllowed) {
-        mediaConstraints = { video: camAllowed ? true : false, audio: false };
-        navigator.mediaDevices.getUserMedia(mediaConstraints)
-            .then(localstream => {
-                videoCont.srcObject = localstream;
-            })
-
-        mic.classList = "nodevice";
-        mic.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
-        micAllowed = 0;
-    }
-    else {
-        mediaConstraints = { video: camAllowed ? true : false, audio: true };
-        navigator.mediaDevices.getUserMedia(mediaConstraints)
-            .then(localstream => {
-                videoCont.srcObject = localstream;
-            })
-
-        mic.innerHTML = `<i class="fas fa-microphone"></i>`;
-        mic.classList = "device";
-        micAllowed = 1;
-    }
-})
+    micAllowed = !micAllowed;
+    mediaConstraints.audio = micAllowed;
+    
+    navigator.mediaDevices.getUserMedia(mediaConstraints)
+        .then(localstream => {
+            videoCont.srcObject = localstream;
+            mic.classList.toggle("nodevice", !micAllowed);
+            mic.innerHTML = micAllowed ? `<i class="fas fa-microphone"></i>` : `<i class="fas fa-microphone-slash"></i>`;
+        })
+        .catch(err => {
+            console.error("Error toggling audio:", err);
+        });
+});

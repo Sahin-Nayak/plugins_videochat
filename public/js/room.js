@@ -1,30 +1,32 @@
+// Initialize Socket.io connection
 const socket = io();
-const myvideo = document.querySelector("#vd1");
+const params = new URLSearchParams(location.search);
 const roomid = params.get("room");
-let username;
+
+// DOM Elements
+const myvideo = document.querySelector("#vd1");
 const chatRoom = document.querySelector('.chat-cont');
 const sendButton = document.querySelector('.chat-send');
 const messageField = document.querySelector('.chat-input');
 const videoContainer = document.querySelector('#vcont');
-const overlayContainer = document.querySelector('#overlay')
+const overlayContainer = document.querySelector('#overlay');
 const continueButt = document.querySelector('.continue-name');
 const nameField = document.querySelector('#name-field');
 const videoButt = document.querySelector('.novideo');
 const audioButt = document.querySelector('.audio');
 const cutCall = document.querySelector('.cutcall');
 const screenShareButt = document.querySelector('.screenshare');
-const whiteboardButt = document.querySelector('.board-icon')
+const whiteboardButt = document.querySelector('.board-icon');
 
-//whiteboard js start
+// Whiteboard setup
 const whiteboardCont = document.querySelector('.whiteboard-cont');
 const canvas = document.querySelector("#whiteboard");
 const ctx = canvas.getContext('2d');
-
-let boardVisisble = false;
-
+let boardVisible = false;
 whiteboardCont.style.visibility = 'hidden';
 
-let isDrawing = 0;
+// Whiteboard variables
+let isDrawing = false;
 let x = 0;
 let y = 0;
 let color = "black";
@@ -32,6 +34,24 @@ let drawsize = 3;
 let colorRemote = "black";
 let drawsizeRemote = 3;
 
+// WebRTC variables
+let videoAllowed = true;
+let audioAllowed = true;
+let micInfo = {};
+let videoInfo = {};
+const configuration = { iceServers: [{ urls: "stun:stun.stunprotocol.org" }] };
+const mediaConstraints = { video: true, audio: true };
+let connections = {};
+let cName = {};
+let audioTrackSent = {};
+let videoTrackSent = {};
+let mystream, myscreenshare;
+let screenshareEnabled = false;
+
+// Display room code
+document.querySelector('.roomcode').textContent = roomid;
+
+// Whiteboard functions
 function fitToContainer(canvas) {
     canvas.style.width = '100%';
     canvas.style.height = '100%';
@@ -40,19 +60,6 @@ function fitToContainer(canvas) {
 }
 
 fitToContainer(canvas);
-
-//getCanvas call is under join room call
-socket.on('getCanvas', url => {
-    let img = new Image();
-    img.onload = start;
-    img.src = url;
-
-    function start() {
-        ctx.drawImage(img, 0, 0);
-    }
-
-    console.log('got canvas', url)
-})
 
 function setColor(newcolor) {
     color = newcolor;
@@ -64,26 +71,13 @@ function setEraser() {
     drawsize = 10;
 }
 
-//might remove this
-function reportWindowSize() {
-    fitToContainer(canvas);
-}
-
-window.onresize = reportWindowSize;
-//
-
 function clearBoard() {
     if (window.confirm('Are you sure you want to clear board? This cannot be undone')) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         socket.emit('store canvas', canvas.toDataURL());
         socket.emit('clearBoard');
     }
-    else return;
 }
-
-socket.on('clearBoard', () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-})
 
 function draw(newx, newy, oldx, oldy) {
     ctx.strokeStyle = color;
@@ -93,9 +87,7 @@ function draw(newx, newy, oldx, oldy) {
     ctx.lineTo(newx, newy);
     ctx.stroke();
     ctx.closePath();
-
     socket.emit('store canvas', canvas.toDataURL());
-
 }
 
 function drawRemote(newx, newy, oldx, oldy) {
@@ -106,14 +98,14 @@ function drawRemote(newx, newy, oldx, oldy) {
     ctx.lineTo(newx, newy);
     ctx.stroke();
     ctx.closePath();
-
 }
 
+// Whiteboard event listeners
 canvas.addEventListener('mousedown', e => {
     x = e.offsetX;
     y = e.offsetY;
-    isDrawing = 1;
-})
+    isDrawing = true;
+});
 
 canvas.addEventListener('mousemove', e => {
     if (isDrawing) {
@@ -122,442 +114,376 @@ canvas.addEventListener('mousemove', e => {
         x = e.offsetX;
         y = e.offsetY;
     }
-})
+});
 
-window.addEventListener('mouseup', e => {
-    if (isDrawing) {
-        isDrawing = 0;
-    }
-})
+window.addEventListener('mouseup', () => {
+    isDrawing = false;
+});
+
+// Socket.io event listeners
+socket.on('getCanvas', url => {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0);
+    img.src = url;
+});
+
+socket.on('clearBoard', () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+});
 
 socket.on('draw', (newX, newY, prevX, prevY, color, size) => {
     colorRemote = color;
     drawsizeRemote = size;
     drawRemote(newX, newY, prevX, prevY);
-})
-
-//whiteboard js end
-
-let videoAllowed = 1;
-let audioAllowed = 1;
-
-let micInfo = {};
-let videoInfo = {};
-
-let videoTrackReceived = {};
-
-let mymuteicon = document.querySelector("#mymuteicon");
-mymuteicon.style.visibility = 'hidden';
-
-let myvideooff = document.querySelector("#myvideooff");
-myvideooff.style.visibility = 'hidden';
-
-const configuration = { iceServers: [{ urls: "stun:stun.stunprotocol.org" }] }
-
-const mediaConstraints = { video: true, audio: true };
-
-let connections = {};
-let cName = {};
-let audioTrackSent = {};
-let videoTrackSent = {};
-
-let mystream, myscreenshare;
-
-
-document.querySelector('.roomcode').innerHTML = `${roomid}`
-
-function CopyClassText() {
-
-    var textToCopy = document.querySelector('.roomcode');
-    var currentRange;
-    if (document.getSelection().rangeCount > 0) {
-        currentRange = document.getSelection().getRangeAt(0);
-        window.getSelection().removeRange(currentRange);
-    }
-    else {
-        currentRange = false;
-    }
-
-    var CopyRange = document.createRange();
-    CopyRange.selectNode(textToCopy);
-    window.getSelection().addRange(CopyRange);
-    document.execCommand("copy");
-
-    window.getSelection().removeRange(CopyRange);
-
-    if (currentRange) {
-        window.getSelection().addRange(currentRange);
-    }
-
-    document.querySelector(".copycode-button").textContent = "Copied!"
-    setTimeout(()=>{
-        document.querySelector(".copycode-button").textContent = "Copy Code";
-    }, 5000);
-}
-
-
-continueButt.addEventListener('click', () => {
-    if (nameField.value == '') return;
-    username = nameField.value;
-    overlayContainer.style.visibility = 'hidden';
-    document.querySelector("#myname").innerHTML = `${username} (You)`;
-    socket.emit("join room", roomid, username);
-
-})
-
-nameField.addEventListener("keyup", function (event) {
-    if (event.keyCode === 13) {
-        event.preventDefault();
-        continueButt.click();
-    }
 });
 
-socket.on('user count', count => {
-    if (count > 1) {
-        videoContainer.className = 'video-cont';
-    }
-    else {
-        videoContainer.className = 'video-cont-single';
-    }
-})
+// WebRTC functions
+function startCall() {
+    navigator.mediaDevices.getUserMedia(mediaConstraints)
+        .then(localStream => {
+            myvideo.srcObject = localStream;
+            myvideo.muted = true;
+            mystream = localStream;
 
-let peerConnection;
+            Object.keys(connections).forEach(key => {
+                localStream.getTracks().forEach(track => {
+                    connections[key].addTrack(track, localStream);
+                    if (track.kind === 'audio') {
+                        audioTrackSent[key] = track;
+                    } else {
+                        videoTrackSent[key] = track;
+                    }
+                });
+            });
+        })
+        .catch(handleGetUserMediaError);
+}
+
+function handleVideoOffer(offer, sid, cname, micinf, vidinf) {
+    cName[sid] = cname;
+    micInfo[sid] = micinf;
+    videoInfo[sid] = vidinf;
+    
+    connections[sid] = new RTCPeerConnection(configuration);
+
+    connections[sid].onicecandidate = event => {
+        if (event.candidate) {
+            socket.emit('new icecandidate', event.candidate, sid);
+        }
+    };
+
+    connections[sid].ontrack = event => {
+        if (!document.getElementById(sid)) {
+            const vidCont = document.createElement('div');
+            vidCont.id = sid;
+            vidCont.classList.add('video-box');
+            
+            const newvideo = document.createElement('video');
+            newvideo.classList.add('video-frame');
+            newvideo.autoplay = true;
+            newvideo.playsinline = true;
+            newvideo.id = `video${sid}`;
+            newvideo.srcObject = event.streams[0];
+            
+            const name = document.createElement('div');
+            name.classList.add('nametag');
+            name.textContent = cName[sid];
+            
+            const muteIcon = document.createElement('div');
+            muteIcon.classList.add('mute-icon');
+            muteIcon.id = `mute${sid}`;
+            muteIcon.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
+            muteIcon.style.visibility = micInfo[sid] === 'on' ? 'hidden' : 'visible';
+            
+            const videoOff = document.createElement('div');
+            videoOff.classList.add('video-off');
+            videoOff.id = `vidoff${sid}`;
+            videoOff.textContent = 'Video Off';
+            videoOff.style.visibility = videoInfo[sid] === 'on' ? 'hidden' : 'visible';
+            
+            vidCont.appendChild(newvideo);
+            vidCont.appendChild(name);
+            vidCont.appendChild(muteIcon);
+            vidCont.appendChild(videoOff);
+            
+            videoContainer.appendChild(vidCont);
+        }
+    };
+
+    connections[sid].onremovetrack = () => {
+        const elem = document.getElementById(sid);
+        if (elem) elem.remove();
+    };
+
+    connections[sid].onnegotiationneeded = () => {
+        connections[sid].createOffer()
+            .then(offer => connections[sid].setLocalDescription(offer))
+            .then(() => socket.emit('video-offer', connections[sid].localDescription, sid))
+            .catch(reportError);
+    };
+
+    const desc = new RTCSessionDescription(offer);
+    
+    connections[sid].setRemoteDescription(desc)
+        .then(() => navigator.mediaDevices.getUserMedia(mediaConstraints))
+        .then(localStream => {
+            myvideo.srcObject = localStream;
+            myvideo.muted = true;
+            mystream = localStream;
+            
+            localStream.getTracks().forEach(track => {
+                connections[sid].addTrack(track, localStream);
+                if (track.kind === 'audio') {
+                    audioTrackSent[sid] = track;
+                    track.enabled = audioAllowed;
+                } else {
+                    videoTrackSent[sid] = track;
+                    track.enabled = videoAllowed;
+                }
+            });
+            
+            return connections[sid].createAnswer();
+        })
+        .then(answer => connections[sid].setLocalDescription(answer))
+        .then(() => socket.emit('video-answer', connections[sid].localDescription, sid))
+        .catch(handleGetUserMediaError);
+}
+
+function handleNewIceCandidate(candidate, sid) {
+    const newcandidate = new RTCIceCandidate(candidate);
+    connections[sid].addIceCandidate(newcandidate).catch(reportError);
+}
+
+function handleVideoAnswer(answer, sid) {
+    const ans = new RTCSessionDescription(answer);
+    connections[sid].setRemoteDescription(ans).catch(reportError);
+}
+
+// Screen sharing
+function screenShareToggle() {
+    const screenMediaPromise = screenshareEnabled 
+        ? navigator.mediaDevices.getUserMedia({ video: true })
+        : (navigator.mediaDevices.getDisplayMedia || navigator.getDisplayMedia).call(navigator, { video: true });
+
+    screenMediaPromise
+        .then(stream => {
+            screenshareEnabled = !screenshareEnabled;
+            
+            Object.keys(connections).forEach(key => {
+                const sender = connections[key].getSenders()
+                    .find(s => s.track && s.track.kind === "video");
+                if (sender) sender.replaceTrack(stream.getVideoTracks()[0]);
+            });
+            
+            const newStream = new MediaStream([stream.getVideoTracks()[0]]);
+            myvideo.srcObject = newStream;
+            myvideo.muted = true;
+            mystream = newStream;
+            
+            screenShareButt.innerHTML = screenshareEnabled 
+                ? `<i class="fas fa-desktop"></i><span class="tooltiptext">Stop Share Screen</span>`
+                : `<i class="fas fa-desktop"></i><span class="tooltiptext">Share Screen</span>`;
+            
+            stream.getVideoTracks()[0].onended = () => {
+                if (screenshareEnabled) screenShareToggle();
+            };
+        })
+        .catch(err => {
+            console.error("Screen sharing error:", err);
+            alert("Unable to share screen: " + err.message);
+        });
+}
+
+// UI Event Listeners
+continueButt.addEventListener('click', () => {
+    if (!nameField.value.trim()) return;
+    
+    username = nameField.value.trim();
+    overlayContainer.style.visibility = 'hidden';
+    document.querySelector("#myname").textContent = `${username} (You)`;
+    socket.emit("join room", roomid, username);
+});
+
+nameField.addEventListener("keyup", e => {
+    if (e.key === "Enter") continueButt.click();
+});
+
+sendButton.addEventListener('click', () => {
+    const msg = messageField.value.trim();
+    if (!msg) return;
+    
+    messageField.value = '';
+    socket.emit('message', msg, username, roomid);
+});
+
+messageField.addEventListener("keyup", e => {
+    if (e.key === "Enter") sendButton.click();
+});
+
+videoButt.addEventListener('click', () => {
+    videoAllowed = !videoAllowed;
+    
+    Object.keys(videoTrackSent).forEach(key => {
+        videoTrackSent[key].enabled = videoAllowed;
+    });
+    
+    if (mystream) {
+        mystream.getVideoTracks().forEach(track => {
+            track.enabled = videoAllowed;
+        });
+    }
+    
+    videoButt.innerHTML = videoAllowed 
+        ? `<i class="fas fa-video"></i>` 
+        : `<i class="fas fa-video-slash"></i>`;
+    videoButt.style.backgroundColor = videoAllowed ? "#4ECCA3" : "#b12c2c";
+    document.querySelector("#myvideooff").style.visibility = videoAllowed ? 'hidden' : 'visible';
+    socket.emit('action', videoAllowed ? 'videoon' : 'videooff');
+});
+
+audioButt.addEventListener('click', () => {
+    audioAllowed = !audioAllowed;
+    
+    Object.keys(audioTrackSent).forEach(key => {
+        audioTrackSent[key].enabled = audioAllowed;
+    });
+    
+    if (mystream) {
+        mystream.getAudioTracks().forEach(track => {
+            track.enabled = audioAllowed;
+        });
+    }
+    
+    audioButt.innerHTML = audioAllowed 
+        ? `<i class="fas fa-microphone"></i>` 
+        : `<i class="fas fa-microphone-slash"></i>`;
+    audioButt.style.backgroundColor = audioAllowed ? "#4ECCA3" : "#b12c2c";
+    document.querySelector("#mymuteicon").style.visibility = audioAllowed ? 'hidden' : 'visible';
+    socket.emit('action', audioAllowed ? 'unmute' : 'mute');
+});
+
+whiteboardButt.addEventListener('click', () => {
+    boardVisible = !boardVisible;
+    whiteboardCont.style.visibility = boardVisible ? 'visible' : 'hidden';
+});
+
+cutCall.addEventListener('click', () => {
+    location.href = '/';
+});
+
+screenShareButt.addEventListener('click', screenShareToggle);
+
+// Utility functions
+function CopyClassText() {
+    const textToCopy = document.querySelector('.roomcode');
+    const range = document.createRange();
+    range.selectNode(textToCopy);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    document.execCommand("copy");
+    window.getSelection().removeAllRanges();
+    
+    const button = document.querySelector(".copycode-button");
+    button.textContent = "Copied!";
+    setTimeout(() => button.textContent = "Copy Code", 5000);
+}
 
 function handleGetUserMediaError(e) {
     switch (e.name) {
         case "NotFoundError":
-            alert("Unable to open your call because no camera and/or microphone" +
-                "were found.");
+            alert("Unable to open your call because no camera and/or microphone were found.");
             break;
         case "SecurityError":
         case "PermissionDeniedError":
             break;
         default:
             alert("Error opening your camera and/or microphone: " + e.message);
-            break;
     }
-
 }
-
 
 function reportError(e) {
-    console.log(e);
-    return;
+    console.error(e);
 }
 
-
-function startCall() {
-
-    navigator.mediaDevices.getUserMedia(mediaConstraints)
-        .then(localStream => {
-            myvideo.srcObject = localStream;
-            myvideo.muted = true;
-
-            localStream.getTracks().forEach(track => {
-                for (let key in connections) {
-                    connections[key].addTrack(track, localStream);
-                    if (track.kind === 'audio')
-                        audioTrackSent[key] = track;
-                    else
-                        videoTrackSent[key] = track;
-                }
-            })
-
-        })
-        .catch(handleGetUserMediaError);
-
-
-}
-
-function handleVideoOffer(offer, sid, cname, micinf, vidinf) {
-
-    cName[sid] = cname;
-    console.log('video offered recevied');
-    micInfo[sid] = micinf;
-    videoInfo[sid] = vidinf;
-    connections[sid] = new RTCPeerConnection(configuration);
-
-    connections[sid].onicecandidate = function (event) {
-        if (event.candidate) {
-            console.log('icecandidate fired');
-            socket.emit('new icecandidate', event.candidate, sid);
-        }
-    };
-
-    connections[sid].ontrack = function (event) {
-
-        if (!document.getElementById(sid)) {
-            console.log('track event fired')
-            let vidCont = document.createElement('div');
-            let newvideo = document.createElement('video');
-            let name = document.createElement('div');
-            let muteIcon = document.createElement('div');
-            let videoOff = document.createElement('div');
-            videoOff.classList.add('video-off');
-            muteIcon.classList.add('mute-icon');
-            name.classList.add('nametag');
-            name.innerHTML = `${cName[sid]}`;
-            vidCont.id = sid;
-            muteIcon.id = `mute${sid}`;
-            videoOff.id = `vidoff${sid}`;
-            muteIcon.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
-            videoOff.innerHTML = 'Video Off'
-            vidCont.classList.add('video-box');
-            newvideo.classList.add('video-frame');
-            newvideo.autoplay = true;
-            newvideo.playsinline = true;
-            newvideo.id = `video${sid}`;
-            newvideo.srcObject = event.streams[0];
-
-            if (micInfo[sid] == 'on')
-                muteIcon.style.visibility = 'hidden';
-            else
-                muteIcon.style.visibility = 'visible';
-
-            if (videoInfo[sid] == 'on')
-                videoOff.style.visibility = 'hidden';
-            else
-                videoOff.style.visibility = 'visible';
-
-            vidCont.appendChild(newvideo);
-            vidCont.appendChild(name);
-            vidCont.appendChild(muteIcon);
-            vidCont.appendChild(videoOff);
-
-            videoContainer.appendChild(vidCont);
-
-        }
-
-
-    };
-
-    connections[sid].onremovetrack = function (event) {
-        if (document.getElementById(sid)) {
-            document.getElementById(sid).remove();
-            console.log('removed a track');
-        }
-    };
-
-    connections[sid].onnegotiationneeded = function () {
-
-        connections[sid].createOffer()
-            .then(function (offer) {
-                return connections[sid].setLocalDescription(offer);
-            })
-            .then(function () {
-
-                socket.emit('video-offer', connections[sid].localDescription, sid);
-
-            })
-            .catch(reportError);
-    };
-
-    let desc = new RTCSessionDescription(offer);
-
-    connections[sid].setRemoteDescription(desc)
-        .then(() => { return navigator.mediaDevices.getUserMedia(mediaConstraints) })
-        .then((localStream) => {
-
-            localStream.getTracks().forEach(track => {
-                connections[sid].addTrack(track, localStream);
-                console.log('added local stream to peer')
-                if (track.kind === 'audio') {
-                    audioTrackSent[sid] = track;
-                    if (!audioAllowed)
-                        audioTrackSent[sid].enabled = false;
-                }
-                else {
-                    videoTrackSent[sid] = track;
-                    if (!videoAllowed)
-                        videoTrackSent[sid].enabled = false
-                }
-            })
-
-        })
-        .then(() => {
-            return connections[sid].createAnswer();
-        })
-        .then(answer => {
-            return connections[sid].setLocalDescription(answer);
-        })
-        .then(() => {
-            socket.emit('video-answer', connections[sid].localDescription, sid);
-        })
-        .catch(handleGetUserMediaError);
-
-
-}
-
-function handleNewIceCandidate(candidate, sid) {
-    console.log('new candidate recieved')
-    var newcandidate = new RTCIceCandidate(candidate);
-
-    connections[sid].addIceCandidate(newcandidate)
-        .catch(reportError);
-}
-
-function handleVideoAnswer(answer, sid) {
-    console.log('answered the offer')
-    const ans = new RTCSessionDescription(answer);
-    connections[sid].setRemoteDescription(ans);
-}
-
-//Thanks to (https://github.com/miroslavpejic85) for ScreenShare Code
-
-screenShareButt.addEventListener('click', () => {
-    screenShareToggle();
+// Socket.io event listeners
+socket.on('user count', count => {
+    videoContainer.className = count > 1 ? 'video-cont' : 'video-cont-single';
 });
-let screenshareEnabled = false;
-function screenShareToggle() {
-    let screenMediaPromise;
-    if (!screenshareEnabled) {
-        if (navigator.getDisplayMedia) {
-            screenMediaPromise = navigator.getDisplayMedia({ video: true });
-        } else if (navigator.mediaDevices.getDisplayMedia) {
-            screenMediaPromise = navigator.mediaDevices.getDisplayMedia({ video: true });
-        } else {
-            screenMediaPromise = navigator.mediaDevices.getUserMedia({
-                video: { mediaSource: "screen" },
-            });
-        }
-    } else {
-        screenMediaPromise = navigator.mediaDevices.getUserMedia({ video: true });
-    }
-    screenMediaPromise
-        .then((myscreenshare) => {
-            screenshareEnabled = !screenshareEnabled;
-            for (let key in connections) {
-                const sender = connections[key]
-                    .getSenders()
-                    .find((s) => (s.track ? s.track.kind === "video" : false));
-                sender.replaceTrack(myscreenshare.getVideoTracks()[0]);
-            }
-            myscreenshare.getVideoTracks()[0].enabled = true;
-            const newStream = new MediaStream([
-                myscreenshare.getVideoTracks()[0], 
-            ]);
-            myvideo.srcObject = newStream;
-            myvideo.muted = true;
-            mystream = newStream;
-            screenShareButt.innerHTML = (screenshareEnabled 
-                ? `<i class="fas fa-desktop"></i><span class="tooltiptext">Stop Share Screen</span>`
-                : `<i class="fas fa-desktop"></i><span class="tooltiptext">Share Screen</span>`
-            );
-            myscreenshare.getVideoTracks()[0].onended = function() {
-                if (screenshareEnabled) screenShareToggle();
-            };
-        })
-        .catch((e) => {
-            alert("Unable to share screen:" + e.message);
-            console.error(e);
-        });
-}
 
 socket.on('video-offer', handleVideoOffer);
-
 socket.on('new icecandidate', handleNewIceCandidate);
-
 socket.on('video-answer', handleVideoAnswer);
-
 
 socket.on('join room', async (conc, cnames, micinfo, videoinfo) => {
     socket.emit('getCanvas');
-    if (cnames)
-        cName = cnames;
-
-    if (micinfo)
-        micInfo = micinfo;
-
-    if (videoinfo)
-        videoInfo = videoinfo;
-
-
-    console.log(cName);
-    if (conc) {
-        await conc.forEach(sid => {
+    
+    if (cnames) cName = cnames;
+    if (micinfo) micInfo = micinfo;
+    if (videoinfo) videoInfo = videoinfo;
+    
+    if (conc && conc.length > 0) {
+        await Promise.all(conc.map(sid => {
             connections[sid] = new RTCPeerConnection(configuration);
-
-            connections[sid].onicecandidate = function (event) {
+            
+            connections[sid].onicecandidate = event => {
                 if (event.candidate) {
-                    console.log('icecandidate fired');
                     socket.emit('new icecandidate', event.candidate, sid);
                 }
             };
-
-            connections[sid].ontrack = function (event) {
-
+            
+            connections[sid].ontrack = event => {
                 if (!document.getElementById(sid)) {
-                    console.log('track event fired')
-                    let vidCont = document.createElement('div');
-                    let newvideo = document.createElement('video');
-                    let name = document.createElement('div');
-                    let muteIcon = document.createElement('div');
-                    let videoOff = document.createElement('div');
-                    videoOff.classList.add('video-off');
-                    muteIcon.classList.add('mute-icon');
-                    name.classList.add('nametag');
-                    name.innerHTML = `${cName[sid]}`;
+                    const vidCont = document.createElement('div');
                     vidCont.id = sid;
-                    muteIcon.id = `mute${sid}`;
-                    videoOff.id = `vidoff${sid}`;
-                    muteIcon.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
-                    videoOff.innerHTML = 'Video Off'
                     vidCont.classList.add('video-box');
+                    
+                    const newvideo = document.createElement('video');
                     newvideo.classList.add('video-frame');
                     newvideo.autoplay = true;
                     newvideo.playsinline = true;
                     newvideo.id = `video${sid}`;
                     newvideo.srcObject = event.streams[0];
-
-                    if (micInfo[sid] == 'on')
-                        muteIcon.style.visibility = 'hidden';
-                    else
-                        muteIcon.style.visibility = 'visible';
-
-                    if (videoInfo[sid] == 'on')
-                        videoOff.style.visibility = 'hidden';
-                    else
-                        videoOff.style.visibility = 'visible';
-
+                    
+                    const name = document.createElement('div');
+                    name.classList.add('nametag');
+                    name.textContent = cName[sid];
+                    
+                    const muteIcon = document.createElement('div');
+                    muteIcon.classList.add('mute-icon');
+                    muteIcon.id = `mute${sid}`;
+                    muteIcon.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
+                    muteIcon.style.visibility = micInfo[sid] === 'on' ? 'hidden' : 'visible';
+                    
+                    const videoOff = document.createElement('div');
+                    videoOff.classList.add('video-off');
+                    videoOff.id = `vidoff${sid}`;
+                    videoOff.textContent = 'Video Off';
+                    videoOff.style.visibility = videoInfo[sid] === 'on' ? 'hidden' : 'visible';
+                    
                     vidCont.appendChild(newvideo);
                     vidCont.appendChild(name);
                     vidCont.appendChild(muteIcon);
                     vidCont.appendChild(videoOff);
-
+                    
                     videoContainer.appendChild(vidCont);
-
                 }
-
             };
-
-            connections[sid].onremovetrack = function (event) {
-                if (document.getElementById(sid)) {
-                    document.getElementById(sid).remove();
-                }
-            }
-
-            connections[sid].onnegotiationneeded = function () {
-
+            
+            connections[sid].onremovetrack = () => {
+                const elem = document.getElementById(sid);
+                if (elem) elem.remove();
+            };
+            
+            connections[sid].onnegotiationneeded = () => {
                 connections[sid].createOffer()
-                    .then(function (offer) {
-                        return connections[sid].setLocalDescription(offer);
-                    })
-                    .then(function () {
-
-                        socket.emit('video-offer', connections[sid].localDescription, sid);
-
-                    })
+                    .then(offer => connections[sid].setLocalDescription(offer))
+                    .then(() => socket.emit('video-offer', connections[sid].localDescription, sid))
                     .catch(reportError);
             };
-
-        });
-
-        console.log('added all sockets to connections');
+        }));
+        
         startCall();
-
-    }
-    else {
-        console.log('waiting for someone to join');
+    } else {
         navigator.mediaDevices.getUserMedia(mediaConstraints)
             .then(localStream => {
                 myvideo.srcObject = localStream;
@@ -566,160 +492,50 @@ socket.on('join room', async (conc, cnames, micinfo, videoinfo) => {
             })
             .catch(handleGetUserMediaError);
     }
-})
+});
 
 socket.on('remove peer', sid => {
-    if (document.getElementById(sid)) {
-        document.getElementById(sid).remove();
-    }
-
+    const elem = document.getElementById(sid);
+    if (elem) elem.remove();
     delete connections[sid];
-})
-
-sendButton.addEventListener('click', () => {
-    const msg = messageField.value;
-    messageField.value = '';
-    socket.emit('message', msg, username, roomid);
-})
-
-messageField.addEventListener("keyup", function (event) {
-    if (event.keyCode === 13) {
-        event.preventDefault();
-        sendButton.click();
-    }
 });
 
 socket.on('message', (msg, sendername, time) => {
+    chatRoom.innerHTML += `
+        <div class="message">
+            <div class="info">
+                <div class="username">${sendername}</div>
+                <div class="time">${time}</div>
+            </div>
+            <div class="content">${msg}</div>
+        </div>`;
     chatRoom.scrollTop = chatRoom.scrollHeight;
-    chatRoom.innerHTML += `<div class="message">
-    <div class="info">
-        <div class="username">${sendername}</div>
-        <div class="time">${time}</div>
-    </div>
-    <div class="content">
-        ${msg}
-    </div>
-</div>`
 });
 
-videoButt.addEventListener('click', () => {
-
-    if (videoAllowed) {
-        for (let key in videoTrackSent) {
-            videoTrackSent[key].enabled = false;
-        }
-        videoButt.innerHTML = `<i class="fas fa-video-slash"></i>`;
-        videoAllowed = 0;
-        videoButt.style.backgroundColor = "#b12c2c";
-
-        if (mystream) {
-            mystream.getTracks().forEach(track => {
-                if (track.kind === 'video') {
-                    track.enabled = false;
-                }
-            })
-        }
-
-        myvideooff.style.visibility = 'visible';
-
-        socket.emit('action', 'videooff');
-    }
-    else {
-        for (let key in videoTrackSent) {
-            videoTrackSent[key].enabled = true;
-        }
-        videoButt.innerHTML = `<i class="fas fa-video"></i>`;
-        videoAllowed = 1;
-        videoButt.style.backgroundColor = "#4ECCA3";
-        if (mystream) {
-            mystream.getTracks().forEach(track => {
-                if (track.kind === 'video')
-                    track.enabled = true;
-            })
-        }
-
-
-        myvideooff.style.visibility = 'hidden';
-
-        socket.emit('action', 'videoon');
-    }
-})
-
-
-audioButt.addEventListener('click', () => {
-
-    if (audioAllowed) {
-        for (let key in audioTrackSent) {
-            audioTrackSent[key].enabled = false;
-        }
-        audioButt.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
-        audioAllowed = 0;
-        audioButt.style.backgroundColor = "#b12c2c";
-        if (mystream) {
-            mystream.getTracks().forEach(track => {
-                if (track.kind === 'audio')
-                    track.enabled = false;
-            })
-        }
-
-        mymuteicon.style.visibility = 'visible';
-
-        socket.emit('action', 'mute');
-    }
-    else {
-        for (let key in audioTrackSent) {
-            audioTrackSent[key].enabled = true;
-        }
-        audioButt.innerHTML = `<i class="fas fa-microphone"></i>`;
-        audioAllowed = 1;
-        audioButt.style.backgroundColor = "#4ECCA3";
-        if (mystream) {
-            mystream.getTracks().forEach(track => {
-                if (track.kind === 'audio')
-                    track.enabled = true;
-            })
-        }
-
-        mymuteicon.style.visibility = 'hidden';
-
-        socket.emit('action', 'unmute');
-    }
-})
-
 socket.on('action', (msg, sid) => {
-    if (msg == 'mute') {
-        console.log(sid + ' muted themself');
-        document.querySelector(`#mute${sid}`).style.visibility = 'visible';
-        micInfo[sid] = 'off';
+    if (!document.getElementById(sid)) return;
+    
+    switch (msg) {
+        case 'mute':
+            document.querySelector(`#mute${sid}`).style.visibility = 'visible';
+            micInfo[sid] = 'off';
+            break;
+        case 'unmute':
+            document.querySelector(`#mute${sid}`).style.visibility = 'hidden';
+            micInfo[sid] = 'on';
+            break;
+        case 'videooff':
+            document.querySelector(`#vidoff${sid}`).style.visibility = 'visible';
+            videoInfo[sid] = 'off';
+            break;
+        case 'videoon':
+            document.querySelector(`#vidoff${sid}`).style.visibility = 'hidden';
+            videoInfo[sid] = 'on';
+            break;
     }
-    else if (msg == 'unmute') {
-        console.log(sid + ' unmuted themself');
-        document.querySelector(`#mute${sid}`).style.visibility = 'hidden';
-        micInfo[sid] = 'on';
-    }
-    else if (msg == 'videooff') {
-        console.log(sid + 'turned video off');
-        document.querySelector(`#vidoff${sid}`).style.visibility = 'visible';
-        videoInfo[sid] = 'off';
-    }
-    else if (msg == 'videoon') {
-        console.log(sid + 'turned video on');
-        document.querySelector(`#vidoff${sid}`).style.visibility = 'hidden';
-        videoInfo[sid] = 'on';
-    }
-})
+});
 
-whiteboardButt.addEventListener('click', () => {
-    if (boardVisisble) {
-        whiteboardCont.style.visibility = 'hidden';
-        boardVisisble = false;
-    }
-    else {
-        whiteboardCont.style.visibility = 'visible';
-        boardVisisble = true;
-    }
-})
-
-cutCall.addEventListener('click', () => {
-    location.href = '/';
-})
+// Window resize handler
+window.addEventListener('resize', () => {
+    fitToContainer(canvas);
+});
